@@ -3,8 +3,7 @@
 ```
 ░▀█▀░█▀▀░█▀▀░█▀▀░█▀█   (\_/)
 ░░█░░█▀▀░▀▀█░▀▀█░█▀█  (='.'=)  Ready to hop into hashing!
-░░▀░░▀▀▀░▀▀▀░▀▀▀░▀░▀  (")_(")
-                       
+░░▀░░▀▀▀░▀▀▀░▀▀▀░▀░▀  (")_(")         
 ```
 
 Tessa is a cheerful command-line companion for validating file integrity. Feed her a file and she will generate or compare cryptographic hashes, let you know if everything matches, and throw in a supportive bunny for good measure.
