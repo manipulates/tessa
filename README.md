@@ -49,8 +49,16 @@ Generate a hash directly:
 python3 tessa.py --file /path/to/file.iso --generate --algo blake2b
 ```
 
-Exit codes follow Unix conventions (`0` = success or generated hash, `1` = mismatch, `2` = error) so you can slot Tessa into CI pipelines or install scripts.
+Add `--quiet` to drop the banner: with `--generate` only the hash is printed, and when comparing nothing is printed (rely on the exit code). Colors are disabled automatically when output is piped or `NO_COLOR` is set. Expected hashes may include an `algo:` prefix (e.g. `sha256:...`).
+
+Exit codes follow Unix conventions (`0` = success or generated hash, `1` = mismatch, `2` = error, including malformed hashes and bad flag combinations) so you can slot Tessa into CI pipelines or install scripts.
 
 ## Inspiration
 
 Checksum utilities can feel stern; Tessa keeps the security benefits while adding warmth. Whether you are double-checking a download or cataloging backups, let the Hash-Bun keep watch. 🐰
+
+## Tests
+
+```
+python3 -m unittest discover -s tests
+```

@@ -2,14 +2,29 @@
 
 import argparse
 import hashlib
+import hmac
 import os
+import string
 import sys
 from typing import Optional
 
-CHUNK_SIZE = 8192
+CHUNK_SIZE = 1024 * 1024
+LABEL_WIDTH = 10
 GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
+
+
+def eprint(*args):
+    """Print to stderr."""
+    print(*args, file=sys.stderr)
+
+
+def paint(text: str, color: str) -> str:
+    """Wrap text in an ANSI color only when stdout is a terminal and NO_COLOR is unset."""
+    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
+        return text
+    return f"{color}{text}{RESET}"
 
 
 def _fixed_digest_algorithms():
@@ -38,13 +53,27 @@ def compute_hash(file_path: str, algorithm: str) -> str:
         raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
     with open(file_path, "rb") as f:
-        while True:
-            chunk = f.read(CHUNK_SIZE)
-            if not chunk:
-                break
+        while chunk := f.read(CHUNK_SIZE):
             h.update(chunk)
 
     return h.hexdigest()
+
+
+def normalize_expected_hash(value: str, algorithm: str) -> str:
+    """Lowercase and sanity-check an expected hash. Raises ValueError if it can't match."""
+    cleaned = value.strip().lower()
+    prefix = f"{algorithm}:"
+    if cleaned.startswith(prefix):
+        cleaned = cleaned[len(prefix):].strip()
+    if not cleaned or any(c not in string.hexdigits for c in cleaned):
+        raise ValueError("Expected hash must contain only hexadecimal characters (0-9, a-f).")
+    expected_len = hashlib.new(algorithm).digest_size * 2
+    if len(cleaned) != expected_len:
+        raise ValueError(
+            f"Expected hash is {len(cleaned)} characters, but {algorithm} produces "
+            f"{expected_len}. Check the algorithm and the pasted value."
+        )
+    return cleaned
 
 
 def display_intro():
@@ -85,11 +114,8 @@ def prompt_existing_file(message: str) -> Optional[str]:
 
 
 def prompt_expected_hash(message: str) -> Optional[str]:
-    while True:
-        value = input(message).strip().lower()
-        if not value:
-            return None
-        return value
+    value = input(message).strip().lower()
+    return value or None
 
 
 def prompt_algorithm(default: str = "sha256") -> Optional[str]:
@@ -113,48 +139,58 @@ def prompt_algorithm(default: str = "sha256") -> Optional[str]:
         print("Unsupported algorithm. Try again.")
 
 
-def compare_and_report(file_path: str, expected_hash: str, algorithm: str) -> Optional[bool]:
+def print_fields(**fields: str):
+    print()
+    for label, value in fields.items():
+        print(f"{(label + ':').ljust(LABEL_WIDTH)} {value}")
+    print()
+
+
+def compare_and_report(
+    file_path: str, expected_hash: str, algorithm: str, quiet: bool = False
+) -> Optional[bool]:
     """Compare hashes and print formatted output. Returns True/False/None for error."""
-    print()
-    print_bunny("Tessa is checking your hash...")
+    if not quiet:
+        print()
+        print_bunny("Tessa is checking your hash...")
     try:
         actual_hash = compute_hash(file_path, algorithm).lower()
-    except Exception as exc:
-        print(f"Error while computing hash: {exc}")
+    except OSError as exc:
+        eprint(f"Error while computing hash: {exc}")
         return None
 
-    label_width = 10
-    print("")
-    print(f"{'Algorithm:'.ljust(label_width)} {algorithm}")
-    print(f"{'File:'.ljust(label_width)} {file_path}")
-    print(f"{'Expected:'.ljust(label_width)} {expected_hash}")
-    print(f"{'Actual:'.ljust(label_width)} {actual_hash}\n")
+    matched = hmac.compare_digest(actual_hash, expected_hash)
+    if quiet:
+        return matched
 
-    if actual_hash == expected_hash:
-        print(f"{GREEN}[OK]{RESET} Hashes match. Integrity verified.\n")
-        return True
+    print_fields(
+        Algorithm=algorithm, File=file_path, Expected=expected_hash, Actual=actual_hash
+    )
+    if matched:
+        print(f"{paint('[OK]', GREEN)} Hashes match. Integrity verified.\n")
     else:
-        print(f"{RED}[FAIL]{RESET} Hash mismatch. File may be corrupted or altered.")
+        print(f"{paint('[FAIL]', RED)} Hash mismatch. File may be corrupted or altered.")
         print("Warning: Hash mismatch detected. Proceed with caution.\n")
-        return False
+    return matched
 
 
-def generate_and_report(file_path: str, algorithm: str) -> Optional[str]:
+def generate_and_report(
+    file_path: str, algorithm: str, quiet: bool = False
+) -> Optional[str]:
     """Generate a hash for the file and print it. Returns hash or None on error."""
-    print()
-    print_bunny("Tessa is generating your hash...")
-    print()
+    if not quiet:
+        print()
+        print_bunny("Tessa is generating your hash...")
     try:
         actual_hash = compute_hash(file_path, algorithm).lower()
-    except Exception as exc:
-        print(f"Error while computing hash: {exc}")
+    except OSError as exc:
+        eprint(f"Error while computing hash: {exc}")
         return None
 
-    label_width = 10
-    print("")
-    print(f"{'Algorithm:'.ljust(label_width)} {algorithm}")
-    print(f"{'File:'.ljust(label_width)} {file_path}")
-    print(f"{'Hash:'.ljust(label_width)} {actual_hash}\n")
+    if quiet:
+        print(actual_hash)
+    else:
+        print_fields(Algorithm=algorithm, File=file_path, Hash=actual_hash)
     return actual_hash
 
 
@@ -177,6 +213,12 @@ def compare_hashes():
     algorithm = prompt_algorithm()
     if algorithm is None:
         print("No algorithm selected. Returning to the main menu.\n")
+        return
+
+    try:
+        expected_hash = normalize_expected_hash(expected_hash, algorithm)
+    except ValueError as exc:
+        eprint(f"{exc}\n")
         return
 
     compare_and_report(file_path, expected_hash, algorithm)
@@ -242,31 +284,58 @@ def main():
         action="store_true",
         help="Generate a hash instead of comparing when using --file"
     )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="No banner or decoration: print only the hash with --generate, "
+             "or nothing when comparing (use the exit code)"
+    )
     args = parser.parse_args()
 
-    if args.file:
-        file_path = args.file
-        if not os.path.isfile(file_path):
-            print(f"Error: File not found: {file_path}")
-            sys.exit(2)
+    if not args.file:
+        for flag, used in (("--expected", args.expected), ("--generate", args.generate),
+                           ("--quiet", args.quiet)):
+            if used:
+                parser.error(f"{flag} requires --file")
+        run_menu()
+        return
 
-        algorithm = args.algo
+    if args.generate and args.expected:
+        parser.error("--generate and --expected cannot be used together")
+    if not args.generate and not args.expected:
+        parser.error("--expected is required unless --generate is used")
+
+    file_path = args.file
+    if not os.path.isfile(file_path):
+        eprint(f"Error: File not found: {file_path}")
+        sys.exit(2)
+
+    algorithm = args.algo
+    if not args.quiet:
         display_intro()
-        if args.generate:
-            result = generate_and_report(file_path, algorithm)
-            sys.exit(0 if result is not None else 2)
 
-        if not args.expected:
-            print("Error: --expected is required unless --generate is used.")
-            sys.exit(2)
+    if args.generate:
+        result = generate_and_report(file_path, algorithm, quiet=args.quiet)
+        sys.exit(0 if result is not None else 2)
 
-        expected_hash = args.expected.strip().lower()
-        result = compare_and_report(file_path, expected_hash, algorithm)
-        if result is None:
-            sys.exit(2)
-        sys.exit(0 if result else 1)
+    try:
+        expected_hash = normalize_expected_hash(args.expected, algorithm)
+    except ValueError as exc:
+        eprint(f"Error: {exc}")
+        sys.exit(2)
 
-    run_menu()
+    result = compare_and_report(file_path, expected_hash, algorithm, quiet=args.quiet)
+    if result is None:
+        sys.exit(2)
+    sys.exit(0 if result else 1)
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        eprint("\nInterrupted. Goodbye from Tessa the Bun!")
+        sys.exit(130)
+    except EOFError:
+        eprint("\nGoodbye from Tessa the Bun!")
+        sys.exit(0)
