@@ -3,62 +3,97 @@
 ```
 ░▀█▀░█▀▀░█▀▀░█▀▀░█▀█   (\_/)
 ░░█░░█▀▀░▀▀█░▀▀█░█▀█  (='.'=)  Ready to hop into hashing!
-░░▀░░▀▀▀░▀▀▀░▀▀▀░▀░▀  (")_(")         
+░░▀░░▀▀▀░▀▀▀░▀▀▀░▀░▀  (")_(")
 ```
 
-Tessa is a cheerful command-line companion for validating file integrity. Feed her a file and she will generate or compare cryptographic hashes, let you know if everything matches, and throw in a supportive bunny for good measure.
+Tessa is a friendly command-line tool for checking file integrity. Give her a file and she will generate its hash or compare it against one you already have, then tell you whether it matches. She is a single Python file with no dependencies.
 
 ## Features
 
-- Friendly interactive menu for comparing and generating hashes without memorizing flags.
-- Fully scripted mode for automation via `--file`, `--expected`, `--algo`, and `--generate` flags.
-- Color-coded verdicts so matching hashes pop in green and mismatches warn in red.
-- Supports every fixed-length algorithm exposed by your local `hashlib` (SHA variants, MD5, BLAKE2, etc.).
-- Cozy ASCII branding so even checksum chores feel welcoming.
+- Interactive menu for comparing and generating hashes, no flags to memorize.
+- Scriptable mode with clear exit codes for CI and install scripts.
+- Supports every fixed-length algorithm in your local `hashlib` (SHA-2, SHA-3, BLAKE2, MD5, and more).
+- Validates the expected hash before comparing, so a bad paste is reported as bad input, not as a corrupted file.
+- Color output only on a terminal, and `NO_COLOR` is respected.
 
-## Getting Started
+## Quick start
 
-1. Clone the repository and move into it:
-   ```bash
-   git clone <repo-url> && cd tessa
-   ```
-2. Ensure you are using Python 3.9+ with standard library `hashlib`.
-3. Run `python3 tessa.py` to let Tessa hop into action.
+Requires Python 3.9 or newer.
+
+```bash
+git clone https://github.com/manipulates/tessa.git
+cd tessa
+python3 tessa.py
+```
 
 ## Usage
 
 ### Interactive mode
 
-```
+```bash
 python3 tessa.py
 ```
 
-Follow the prompts to pick a file, choose a hash algorithm (defaults to SHA-256), and either verify an expected hash or generate a new one.
+Pick **Compare** or **Generate**, enter a file path, and choose an algorithm (SHA-256 by default). Press Enter at any prompt to go back to the menu.
 
-### Scriptable mode
+### Command-line mode
 
-Compare a file’s hash against a known value:
+Passing `--file` skips the menu.
 
-```
-python3 tessa.py --file /path/to/file.iso --expected 123abc... --algo sha256
-```
+Compare a file against a known hash:
 
-Generate a hash directly:
-
-```
-python3 tessa.py --file /path/to/file.iso --generate --algo blake2b
+```bash
+python3 tessa.py --file ubuntu.iso --expected 123abc... --algo sha256
 ```
 
-Add `--quiet` to drop the banner: with `--generate` only the hash is printed, and when comparing nothing is printed (rely on the exit code). Colors are disabled automatically when output is piped or `NO_COLOR` is set. Expected hashes may include an `algo:` prefix (e.g. `sha256:...`).
+Generate a hash:
 
-Exit codes follow Unix conventions (`0` = success or generated hash, `1` = mismatch, `2` = error, including malformed hashes and bad flag combinations) so you can slot Tessa into CI pipelines or install scripts.
-
-## Inspiration
-
-Checksum utilities can feel stern; Tessa keeps the security benefits while adding warmth. Whether you are double-checking a download or cataloging backups, let the Hash-Bun keep watch. 🐰
-
-## Tests
-
+```bash
+python3 tessa.py --file ubuntu.iso --generate --algo blake2b
 ```
+
+Use it in a script:
+
+```bash
+# Print only the hash
+HASH=$(python3 tessa.py -f ubuntu.iso -g -q)
+
+# Verify silently and branch on the exit code
+if python3 tessa.py -f ubuntu.iso -e "$EXPECTED" -q; then
+  echo "verified"
+fi
+```
+
+### Options
+
+| Option | Description |
+| --- | --- |
+| `-f`, `--file FILE` | File to hash. Enables command-line mode. |
+| `-e`, `--expected HASH` | Expected hash to compare against. An `algo:` prefix such as `sha256:...` is accepted. |
+| `-a`, `--algo ALGO` | Hash algorithm (default `sha256`). |
+| `-g`, `--generate` | Print the file's hash instead of comparing. Cannot be combined with `--expected`. |
+| `-q`, `--quiet` | No banner. Prints only the hash with `--generate`, and nothing when comparing. |
+| `-h`, `--help` | Show help, including the full algorithm list. |
+
+`--expected`, `--generate` and `--quiet` all require `--file`.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Hashes match, or a hash was generated. |
+| `1` | Hashes do not match. |
+| `2` | Error: missing file, unreadable file, malformed expected hash, or invalid flags. |
+| `130` | Interrupted with Ctrl-C. |
+
+## Development
+
+Run the tests (standard library only, nothing to install):
+
+```bash
 python3 -m unittest discover -s tests
 ```
+
+## Why Tessa?
+
+Checksum tools can feel stern. Tessa keeps the security benefits and adds some warmth. Whether you are double-checking a download or cataloging backups, let the Hash-Bun keep watch. 🐰
